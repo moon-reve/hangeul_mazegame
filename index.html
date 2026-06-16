@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>한글 미로 - 자음 가족 찾기</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: radial-gradient(ellipse at center, #1a0530 0%, #0a0018 70%);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', '나눔고딕', sans-serif;
+  color: white;
+  gap: 14px;
+  padding: 16px;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+#header {
+  background: white;
+  border: 4px solid #ffcc00;
+  border-radius: 50px;
+  padding: 10px 36px 12px;
+  text-align: center;
+  box-shadow: 0 0 30px #ffcc0077, 0 4px 20px rgba(0,0,0,0.4);
+}
+#family-label {
+  font-size: 12px;
+  color: #999;
+  font-weight: bold;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+#targets-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.target-char {
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  background: #f5f0e0;
+  border: 2px solid #ddd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: bold;
+  color: #222;
+  transition: all 0.35s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+.target-char.collected {
+  background: #22cc55;
+  border-color: #11aa44;
+  color: white;
+  box-shadow: 0 0 15px #22cc5588;
+  transform: scale(1.05);
+}
+
+/* ── Canvas wrap ── */
+#canvas-wrap {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 0 60px #6600ff33, 0 8px 40px rgba(0,0,0,0.6);
+}
+canvas { display: block; }
+
+/* ── Win overlay ── */
+#overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 0, 20, 0.88);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  text-align: center;
+  padding: 24px;
+}
+#overlay.show { display: flex; }
+#overlay-emoji { font-size: 52px; animation: bounce 0.6s ease infinite alternate; }
+@keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+#overlay-title {
+  font-size: 26px;
+  font-weight: bold;
+  color: #ffcc00;
+  text-shadow: 0 0 25px #ffcc00;
+}
+#overlay-sub { font-size: 15px; color: #aaa; white-space: pre-line; line-height: 1.6; }
+#overlay-btn {
+  background: linear-gradient(135deg, #ffcc00, #ff9900);
+  color: #222;
+  border: none;
+  border-radius: 30px;
+  padding: 12px 36px;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 0 20px #ffcc0088;
+  font-family: inherit;
+  margin-top: 4px;
+  transition: transform 0.15s;
+}
+#overlay-btn:hover { transform: scale(1.06); }
+
+/* ── D-pad ── */
+#dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows: repeat(3, 52px);
+  gap: 5px;
+}
+.dpad-btn {
+  width: 52px; height: 52px;
+  background: rgba(255,255,255,0.1);
+  border: 2px solid rgba(255,255,255,0.25);
+  border-radius: 12px;
+  color: white;
+  font-size: 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.1s;
+}
+.dpad-btn:active, .dpad-btn.pressed {
+  background: rgba(255,204,0,0.35);
+  border-color: #ffcc00;
+  box-shadow: 0 0 12px #ffcc0066;
+}
+.dpad-gap { background: none; border: none; cursor: default; }
+
+/* ── Info ── */
+#info {
+  font-size: 12px;
+  color: #666;
+  text-align: center;
+}
+#info span { color: #aaa; }
+
+/* ── Level dots ── */
+#level-dots {
+  display: flex;
+  gap: 8px;
+}
+.dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.3);
+  transition: all 0.3s;
+}
+.dot.done { background: #22cc55; border-color: #11aa44; box-shadow: 0 0 8px #22cc55; }
+.dot.current { background: #ffcc00; border-color: #ff9900; box-shadow: 0 0 8px #ffcc00; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="family-label">자음 가족 찾기</div>
+  <div id="targets-row"></div>
+</div>
+
+<div id="canvas-wrap">
+  <canvas id="c"></canvas>
+  <div id="overlay">
+    <div id="overlay-emoji">🎉</div>
+    <div id="overlay-title">자음 가족 완성!</div>
+    <div id="overlay-sub"></div>
+    <button id="overlay-btn" onclick="handleOverlay()">다음 단계 →</button>
+  </div>
+</div>
+
+<div id="dpad">
+  <div class="dpad-gap"></div>
+  <div class="dpad-btn" id="btn-up"   onpointerdown="dpadPress('up')"   ontouchstart="dpadPress('up')"   onpointerup="dpadRelease('up')"   onpointerleave="dpadRelease('up')">▲</div>
+  <div class="dpad-gap"></div>
+  <div class="dpad-btn" id="btn-left" onpointerdown="dpadPress('left')" ontouchstart="dpadPress('left')" onpointerup="dpadRelease('left')" onpointerleave="dpadRelease('left')">◀</div>
+  <div class="dpad-gap"></div>
+  <div class="dpad-btn" id="btn-right"onpointerdown="dpadPress('right')"ontouchstart="dpadPress('right')"onpointerup="dpadRelease('right')"onpointerleave="dpadRelease('right')">▶</div>
+  <div class="dpad-gap"></div>
+  <div class="dpad-btn" id="btn-down" onpointerdown="dpadPress('down')" ontouchstart="dpadPress('down')" onpointerup="dpadRelease('down')" onpointerleave="dpadRelease('down')">▼</div>
+  <div class="dpad-gap"></div>
+</div>
+
+<div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+  <div id="level-dots"></div>
+  <div id="info">방향키 · WASD · 위 버튼으로 이동 &nbsp;|&nbsp; <span id="lv-info">레벨 1 / 4</span></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════
+const COLS = 13, ROWS = 11, CS = 50;
+const W = COLS * CS, H = ROWS * CS;
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+canvas.width  = W;
+canvas.height = H;
+
+const WALL_COLORS = [
+  '#ff3355', // red
+  '#33aaff', // blue
+  '#33ffaa', // green
+  '#ffcc00', // yellow
+  '#ff55cc', // pink
+];
+
+// 자음 가족 (발음 기관별 분류)
+const LEVELS = [
+  {
+    label: 'ㅂ 가족 (입술소리)',
+    targets: ['ㅁ', 'ㅂ', 'ㅍ'],
+    decoys:  ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅅ', 'ㅈ', 'ㅊ', 'ㅋ'],
+    hint: '입술을 붙여서 내는 소리예요!'
+  },
+  {
+    label: 'ㄷ 가족 (잇몸소리)',
+    targets: ['ㄴ', 'ㄷ', 'ㅌ'],
+    decoys:  ['ㄱ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅈ', 'ㅊ', 'ㅋ'],
+    hint: '혀끝을 윗잇몸에 붙여서 내는 소리예요!'
+  },
+  {
+    label: 'ㄱ 가족 (여린입천장소리)',
+    targets: ['ㄱ', 'ㅋ', 'ㅇ'],
+    decoys:  ['ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅈ', 'ㅌ'],
+    hint: '혀 뒤쪽을 입천장에 붙여서 내는 소리예요!'
+  },
+  {
+    label: 'ㅅ 가족 (잇소리)',
+    targets: ['ㅅ', 'ㅈ', 'ㅊ'],
+    decoys:  ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅋ', 'ㅌ'],
+    hint: '혀가 이 사이로 바람을 내는 소리예요!'
+  },
+];
+
+// ═══════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════
+let currentLevelIdx = 0;
+let level, maze, wallColors, items, player, collected;
+let moveQueue = [];
+let effects   = [];   // visual effects
+let particles = [];   // sparkle particles
+let animTime  = 0;
+let gameOver  = false;
+let dpadHeld  = {};   // which dpad buttons held
+let dpadTimer = {};
+
+// ═══════════════════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════════════════
+function shuffle(a) {
+  const b = [...a];
+  for (let i = b.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [b[i], b[j]] = [b[j], b[i]];
+  }
+  return b;
+}
+
+// ═══════════════════════════════════════════════════════
+//  MAZE GENERATION (Recursive DFS)
+//  walls: [top=0, right=1, bottom=2, left=3]
+// ═══════════════════════════════════════════════════════
+const DIRS = [[-1,0,0,2],[0,1,1,3],[1,0,2,0],[0,-1,3,1]];
+
+function generateMaze() {
+  const m = Array.from({length: ROWS}, () =>
+    Array.from({length: COLS}, () => ({ visited: false, walls: [true,true,true,true] }))
+  );
+  const stack = [[0, 0]];
+  m[0][0].visited = true;
+  while (stack.length) {
+    const [r, c] = stack[stack.length - 1];
+    const unvisited = shuffle(DIRS).filter(([dr,dc]) => {
+      const nr=r+dr, nc=c+dc;
+      return nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&!m[nr][nc].visited;
+    });
+    if (unvisited.length === 0) { stack.pop(); continue; }
+    const [dr,dc,w1,w2] = unvisited[0];
+    const nr=r+dr, nc=c+dc;
+    m[r][c].walls[w1]  = false;
+    m[nr][nc].walls[w2]= false;
+    m[nr][nc].visited  = true;
+    stack.push([nr, nc]);
+  }
+  return m;
+}
+
+function generateWallColors() {
+  return Array.from({length: ROWS}, () =>
+    Array.from({length: COLS}, () => WALL_COLORS[Math.floor(Math.random()*WALL_COLORS.length)])
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  LEVEL INIT
+// ═══════════════════════════════════════════════════════
+function initLevel(idx) {
+  currentLevelIdx = idx;
+  level    = LEVELS[idx];
+  gameOver = false;
+  maze       = generateMaze();
+  wallColors = generateWallColors();
+  player     = { r: 0, c: 0 };
+  collected  = new Set();
+  moveQueue  = [];
+  effects    = [];
+  particles  = [];
+  items      = {};
+
+  // Place items in random cells (not start)
+  const positions = [];
+  for (let r=0; r<ROWS; r++)
+    for (let c=0; c<COLS; c++)
+      if (r!==0||c!==0) positions.push([r,c]);
+  const shuffled = shuffle(positions);
+  const chars = shuffle([...level.targets, ...level.decoys.slice(0, 9)]);
+  chars.forEach((ch, i) => {
+    if (i >= shuffled.length) return;
+    const [r,c] = shuffled[i];
+    items[`${r},${c}`] = { ch, isTarget: level.targets.includes(ch), shake: 0, dead: false };
+  });
+
+  updateHeader();
+  updateLevelDots();
+  document.getElementById('lv-info').textContent = `레벨 ${idx+1} / ${LEVELS.length}`;
+  document.getElementById('overlay').classList.remove('show');
+}
+
+function updateHeader() {
+  document.getElementById('family-label').textContent = level.label + ' 찾기';
+  const row = document.getElementById('targets-row');
+  row.innerHTML = '';
+  level.targets.forEach(ch => {
+    const d = document.createElement('div');
+    d.className = 'target-char' + (collected.has(ch) ? ' collected' : '');
+    d.id = 'tc-' + ch;
+    d.textContent = ch;
+    row.appendChild(d);
+  });
+}
+
+function markCollected(ch) {
+  const el = document.getElementById('tc-' + ch);
+  if (el) el.classList.add('collected');
+}
+
+function updateLevelDots() {
+  const wrap = document.getElementById('level-dots');
+  wrap.innerHTML = '';
+  LEVELS.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i < currentLevelIdx ? ' done' : i === currentLevelIdx ? ' current' : '');
+    wrap.appendChild(d);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  MOVEMENT
+// ═══════════════════════════════════════════════════════
+function tryMove(dr, dc) {
+  if (gameOver) return;
+  const {r, c} = player;
+  const wIdx = dr===-1?0:dc===1?1:dr===1?2:3;
+  if (maze[r][c].walls[wIdx]) return;
+  const nr=r+dr, nc=c+dc;
+  player.r = nr; player.c = nc;
+
+  const key = `${nr},${nc}`;
+  const item = items[key];
+  if (item && !item.dead) {
+    if (item.isTarget) {
+      item.dead = true;
+      collected.add(item.ch);
+      markCollected(item.ch);
+      spawnCollectEffect(nc*CS+CS/2, nr*CS+CS/2);
+      if (collected.size === level.targets.length) {
+        gameOver = true;
+        setTimeout(showWin, 500);
+      }
+    } else {
+      item.shake = 14;
+      spawnWrongEffect(nc*CS+CS/2, nr*CS+CS/2);
+    }
+  }
+}
+
+function processQueue() {
+  if (moveQueue.length > 0) {
+    const [dr,dc] = moveQueue.shift();
+    tryMove(dr, dc);
+  }
+}
+
+// ── Sparkle on collect ──
+function spawnCollectEffect(x, y) {
+  for (let i=0; i<12; i++) {
+    const angle = (i/12) * Math.PI * 2;
+    const speed = 2 + Math.random() * 3;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
+      life: 30+Math.floor(Math.random()*20),
+      maxLife: 50,
+      r: 3+Math.random()*3,
+      color: ['#ffcc00','#fffaaa','#ff9900'][Math.floor(Math.random()*3)]
+    });
+  }
+  effects.push({ x, y, life: 30, maxLife: 30, maxR: 50, color: '#ffcc00' });
+}
+
+// ── Flash on wrong ──
+function spawnWrongEffect(x, y) {
+  effects.push({ x, y, life: 20, maxLife: 20, maxR: 35, color: '#ff3333' });
+}
+
+// ═══════════════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════════════
+const KEY_MAP = {
+  ArrowUp:[-1,0], ArrowDown:[1,0], ArrowLeft:[0,-1], ArrowRight:[0,1],
+  w:[-1,0], s:[1,0], a:[0,-1], d:[0,1],
+};
+document.addEventListener('keydown', e => {
+  if (KEY_MAP[e.key]) { e.preventDefault(); moveQueue.push(KEY_MAP[e.key]); }
+});
+
+const DPAD_MAP = { up:[-1,0], down:[1,0], left:[0,-1], right:[0,1] };
+function dpadPress(dir) {
+  moveQueue.push(DPAD_MAP[dir]);
+  document.getElementById('btn-'+dir)?.classList.add('pressed');
+  clearInterval(dpadTimer[dir]);
+  dpadTimer[dir] = setInterval(() => moveQueue.push(DPAD_MAP[dir]), 180);
+}
+function dpadRelease(dir) {
+  clearInterval(dpadTimer[dir]);
+  document.getElementById('btn-'+dir)?.classList.remove('pressed');
+}
+
+// Touch swipe on canvas
+let tx0, ty0;
+canvas.addEventListener('touchstart', e => {
+  tx0 = e.touches[0].clientX; ty0 = e.touches[0].clientY; e.preventDefault();
+}, {passive:false});
+canvas.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - tx0;
+  const dy = e.changedTouches[0].clientY - ty0;
+  if (Math.max(Math.abs(dx),Math.abs(dy)) < 10) return;
+  if (Math.abs(dx) > Math.abs(dy)) moveQueue.push([0, dx>0?1:-1]);
+  else moveQueue.push([dy>0?1:-1, 0]);
+  e.preventDefault();
+}, {passive:false});
+
+// ═══════════════════════════════════════════════════════
+//  WIN
+// ═══════════════════════════════════════════════════════
+function showWin() {
+  const isLast = currentLevelIdx >= LEVELS.length - 1;
+  document.getElementById('overlay-emoji').textContent = isLast ? '🏆' : '🎉';
+  document.getElementById('overlay-title').textContent = level.label + ' 완성!';
+  document.getElementById('overlay-sub').textContent =
+    level.hint + (isLast ? '\n\n모든 자음 가족을 찾았어요! 대단해요!' : '\n\n다음 자음 가족을 찾아보세요!');
+  document.getElementById('overlay-btn').textContent = isLast ? '🔄 처음부터' : '다음 단계 →';
+  document.getElementById('overlay').classList.add('show');
+}
+
+function handleOverlay() {
+  const isLast = currentLevelIdx >= LEVELS.length - 1;
+  initLevel(isLast ? 0 : currentLevelIdx + 1);
+}
+
+// ═══════════════════════════════════════════════════════
+//  RENDERING
+// ═══════════════════════════════════════════════════════
+function glowLine(x1, y1, x2, y2, color) {
+  ctx.save();
+  ctx.shadowBlur = 16;
+  ctx.shadowColor = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'square';
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  // bright core
+  ctx.shadowBlur = 3;
+  ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.restore();
+}
+
+function draw(ts) {
+  animTime = ts / 1000;
+  const pulse = (Math.sin(animTime * 2.8) + 1) / 2;  // 0~1
+
+  // ── Background ──
+  ctx.fillStyle = '#0a0018';
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Grid (subtle) ──
+  ctx.save();
+  ctx.strokeStyle = 'rgba(60,30,100,0.25)';
+  ctx.lineWidth = 0.5;
+  for (let r=0; r<=ROWS; r++) {
+    ctx.beginPath(); ctx.moveTo(0,r*CS); ctx.lineTo(W,r*CS); ctx.stroke();
+  }
+  for (let c=0; c<=COLS; c++) {
+    ctx.beginPath(); ctx.moveTo(c*CS,0); ctx.lineTo(c*CS,H); ctx.stroke();
+  }
+  ctx.restore();
+
+  // ── Start glow ──
+  ctx.save();
+  ctx.globalAlpha = 0.12 + pulse * 0.05;
+  ctx.fillStyle = '#44ffaa';
+  ctx.shadowBlur = 20; ctx.shadowColor = '#44ffaa';
+  ctx.fillRect(0, 0, CS, CS);
+  ctx.restore();
+
+  // ── Maze walls ──
+  for (let r=0; r<ROWS; r++) {
+    for (let c=0; c<COLS; c++) {
+      const {walls} = maze[r][c];
+      const col = wallColors[r][c];
+      const x=c*CS, y=r*CS;
+      if (walls[0]) glowLine(x,   y,   x+CS, y,    col);
+      if (walls[1]) glowLine(x+CS,y,   x+CS, y+CS, col);
+      if (walls[2]) glowLine(x,   y+CS,x+CS, y+CS, col);
+      if (walls[3]) glowLine(x,   y,   x,    y+CS, col);
+    }
+  }
+
+  // ── Ring effects ──
+  effects = effects.filter(e => e.life > 0);
+  for (const e of effects) {
+    const t = 1 - e.life / e.maxLife;
+    const rad = t * e.maxR;
+    ctx.save();
+    ctx.globalAlpha = e.life / e.maxLife * 0.9;
+    ctx.strokeStyle = e.color;
+    ctx.shadowBlur = 20; ctx.shadowColor = e.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(e.x, e.y, rad, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+    e.life--;
+  }
+
+  // ── Particles ──
+  particles = particles.filter(p => p.life > 0);
+  for (const p of particles) {
+    const a = p.life / p.maxLife;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    ctx.shadowBlur = 8; ctx.shadowColor = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * a, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.15;
+    p.life--;
+  }
+
+  // ── Items ──
+  for (const key in items) {
+    const item = items[key];
+    if (item.dead) continue;
+    const [r,c] = key.split(',').map(Number);
+    const cx = c*CS+CS/2, cy = r*CS+CS/2;
+
+    let sx = 0;
+    if (item.shake > 0) { sx = Math.sin(item.shake*1.8)*5; item.shake--; }
+
+    ctx.save();
+    ctx.translate(cx+sx, cy);
+
+    if (item.isTarget) {
+      const sc = 1 + pulse * 0.1;
+      ctx.scale(sc, sc);
+      ctx.shadowBlur = 22 + pulse*10;
+      ctx.shadowColor = '#ffcc00';
+      ctx.fillStyle = '#ffcc00';
+      ctx.beginPath(); ctx.arc(0, 0, 19, 0, Math.PI*2); ctx.fill();
+      // inner shine
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath(); ctx.ellipse(-5, -6, 7, 4, -0.5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#222';
+      ctx.font = 'bold 21px serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(item.ch, 0, 1);
+    } else {
+      ctx.shadowBlur = 8; ctx.shadowColor = '#8866ff';
+      ctx.fillStyle = 'rgba(70,50,160,0.85)';
+      ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(180,160,255,0.9)';
+      ctx.font = '17px serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(item.ch, 0, 1);
+    }
+    ctx.restore();
+  }
+
+  // ── Player ──
+  const px = player.c*CS + CS/2;
+  const py = player.r*CS + CS/2;
+
+  ctx.save();
+  ctx.shadowBlur = 25 + pulse*15;
+  ctx.shadowColor = '#aaddff';
+  const grad = ctx.createRadialGradient(px-4, py-5, 1, px, py, 17);
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(0.45, '#c0e0ff');
+  grad.addColorStop(1, 'rgba(80,140,255,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(px, py, 17, 0, Math.PI*2); ctx.fill();
+  // highlight
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.beginPath(); ctx.ellipse(px-4, py-5, 5, 3, -0.4, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════
+//  GAME LOOP
+// ═══════════════════════════════════════════════════════
+let lastMove = 0;
+function gameLoop(ts = 0) {
+  // Rate-limit moves slightly for smoothness
+  if (ts - lastMove > 100 || moveQueue.length > 0) {
+    processQueue();
+    lastMove = ts;
+  }
+  draw(ts);
+  requestAnimationFrame(gameLoop);
+}
+
+// ═══════════════════════════════════════════════════════
+//  START
+// ═══════════════════════════════════════════════════════
+initLevel(0);
+gameLoop();
+</script>
+</body>
+</html>
